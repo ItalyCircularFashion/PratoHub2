@@ -4,12 +4,12 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { createFabric } from './fabric.js';
 import { createLoom } from './loom.js';
 import { loadLoomFrame } from './asset-loader.js';
+import { HeroFilm } from './hero-film.js';
 
 gsap.registerPlugin(ScrollTrigger);
 const $=s=>document.querySelector(s);
 const host=$('#weave3d'),heroVisual=$('.visual'),machineViewport=$('#machine-viewport');
-const motionButton=$('#motion'),media=window.matchMedia('(prefers-reduced-motion: reduce)');
-const prefersReduced=()=>manualReduced===null?media.matches:manualReduced;
+const prefersReduced=()=>false;
 const captions=[
  'La filiera inizia dalla selezione e preparazione delle fibre.',
  'Le fibre vengono trasformate in filati attraverso i processi di filatura.',
@@ -25,10 +25,10 @@ const cameraStops={
  cloth:{position:[3.1,5.8,7.9],look:[0,-.1,3.0]},
  fabric:{position:[0,7.5,12.8],look:[0,0,0]}
 };
-let manualReduced=null,renderer,scene,camera,fabric,loom;
+let renderer,scene,camera,fabric,loom;
 let raf=0,observer,motionContext=null,cameraTween=null;
 let activeMode='fabric',inWorkbench=false,targetProgress=.38,displayProgress=.38;
-let lastFrame=0,lastPicks=-1,lastStage="",lastStatusAt=0,isVisible=true,isAlive=true;
+let lastFrame=0,lastPicks=-1,lastStage="",lastStatusAt=0,isVisible=true,isAlive=true,heroFilm=null;
 const lookAt={x:0,y:0,z:0};
 function render(){if(renderer&&scene&&camera)renderer.render(scene,camera);}
 function updateCamera(){camera?.lookAt(lookAt.x,lookAt.y,lookAt.z);render();}
@@ -162,12 +162,7 @@ function setupMotion(){
  });
 }
 function syncMotion(){
- const off=prefersReduced();document.body.classList.toggle('reduce-motion',off);
- motionButton.setAttribute('aria-pressed',String(off));motionButton.textContent=off?'Riattiva movimento':'Riduci movimento';
- cameraTween?.kill();setupMotion();
- if(off){displayProgress=targetProgress;fabric?.setProgress(displayProgress);loom?.setProgress(displayProgress);stop();}
- else schedule();
- ScrollTrigger.refresh();
+ cameraTween?.kill();setupMotion();schedule();ScrollTrigger.refresh();
 }
 
 initialise3D();
@@ -190,8 +185,6 @@ $('#loom-stop').addEventListener('click',()=>{activateWorkbench('loom');loom?.st
 $('#loom-speed').addEventListener('input',event=>{
  loom?.setSpeed(Number(event.target.value));$('#loom-speed-value').textContent=Number(event.target.value).toFixed(2)+'×';
 });
-motionButton.addEventListener('click',()=>{manualReduced=!prefersReduced();syncMotion();});
-media.addEventListener?.('change',syncMotion);
 document.addEventListener('visibilitychange',()=>document.hidden?stop():schedule());
 window.addEventListener('pagehide',()=>{
  isAlive=false;stop();observer?.disconnect();host._viewObserver?.disconnect();cameraTween?.kill();motionContext?.revert();
