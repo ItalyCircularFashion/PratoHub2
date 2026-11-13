@@ -6,6 +6,7 @@ import { createLoom } from './loom.js';
 import { loadLoomFrame } from './asset-loader.js';
 import { HeroFilm } from './hero-film.js';
 import { createHeroSequence } from './hero-sequence.js';
+import { createStudioView } from './studio-view.js';
 
 gsap.registerPlugin(ScrollTrigger);
 const $=s=>document.querySelector(s);
@@ -34,6 +35,7 @@ const lookAt={x:0,y:0,z:0};
 const gaze={x:0,y:0,tx:0,ty:0};
 function render(){
  if(!renderer||!scene||!camera)return;
+ if(!inWorkbench)return;
  const px=camera.position.x,py=camera.position.y;
  camera.position.x+=gaze.x*.45;camera.position.y+=gaze.y*.3;
  renderer.render(scene,camera);
@@ -59,6 +61,7 @@ function status(){
 }
 function frame(now){
  raf=0;if(!isAlive||!renderer||document.hidden||!isVisible||prefersReduced())return;
+ if(!inWorkbench)return; // la hero usa il renderer studio dedicato
  gaze.x+=(gaze.tx-gaze.x)*.06;gaze.y+=(gaze.ty-gaze.y)*.06;
  const dt=Math.min(.05,Math.max(0,(now-lastFrame)/1000||0));lastFrame=now;
  if(Math.abs(displayProgress-targetProgress)>.0004){
@@ -94,16 +97,16 @@ function fallbackFrame(){
 function initialise3D(){
  try{
   renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,powerPreference:'high-performance'});
-  renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.45;
+  renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.7;
   renderer.domElement.setAttribute('aria-hidden','true');host.append(renderer.domElement);
   scene=new THREE.Scene();camera=new THREE.PerspectiveCamera(42,1,.1,100);
   camera.position.set(...cameraStops.fabric.position);
-  scene.add(new THREE.HemisphereLight(0xedffe4,0x1d281e,3.1));
+  scene.add(new THREE.HemisphereLight(0xedffe4,0x1d281e,3.6));
   const key=new THREE.DirectionalLight(0xf1ffbc,4.1);key.position.set(5,8,7);scene.add(key);
   const rim=new THREE.DirectionalLight(0x8fc8b0,2.1);rim.position.set(-6,3,-6);scene.add(rim);
   fabric=createFabric();fabric.group.rotation.set(-.12,-.28,0);scene.add(fabric.group);fabric.group.visible=false;
   loom=createLoom();loom.group.visible=false;scene.add(loom.group);
-  heroSeq=createHeroSequence();heroSeq.group.visible=true;scene.add(heroSeq.group);
+  heroSeq=createHeroSequence();heroSeq.group.visible=false;scene.add(heroSeq.group);
   heroVisual.classList.add('webgl-ready');
   $('#asset-status').textContent='Modello 3D: caricamento…';
   loadLoomFrame({onReady:frameGroup=>{
@@ -133,7 +136,7 @@ function activateWorkbench(mode){
 function setMode(mode){
  if(!fabric||!loom)return;
  activeMode=mode;fabric.group.visible=mode==='fabric'&&inWorkbench;loom.group.visible=mode==='loom';
- if(heroSeq)heroSeq.group.visible=mode==='fabric'&&!inWorkbench;
+ if(heroSeq)heroSeq.group.visible=false;
  $('#mode-fabric').setAttribute('aria-pressed',String(mode==='fabric'));
  $('#mode-loom').setAttribute('aria-pressed',String(mode==='loom'));
  flyTo(mode==='fabric'?'fabric':'overview');
@@ -177,6 +180,11 @@ function syncMotion(){
 }
 
 initialise3D();
+let heroStudio=null,sectionStudio=null;
+try{
+ heroStudio=createStudioView($('#studio-hero'),{style:'realistic',camera:[4.0,2.5,5.4],look:[0,1.15,0]});
+ sectionStudio=createStudioView($('#studio-section'),{style:'stylized',camera:[4.0,2.5,5.4],look:[0,1.15,0]});
+}catch(error){console.warn('Vetrina 3D non attiva:',error);}
 document.querySelectorAll('.step').forEach((button,i)=>button.addEventListener('click',()=>setStep(i)));
 $('#fabric-progress').addEventListener('input',event=>{activateWorkbench('fabric');applyProgress(Number(event.target.value)/100);});
 $('#mode-fabric').addEventListener('click',()=>activateWorkbench('fabric'));
@@ -204,7 +212,7 @@ window.addEventListener('pointermove',event=>{
 document.addEventListener('pointerleave',()=>{gaze.tx=0;gaze.ty=0;});
 window.addEventListener('pagehide',()=>{
  isAlive=false;stop();observer?.disconnect();host._viewObserver?.disconnect();cameraTween?.kill();motionContext?.revert();
- fabric?.dispose();loom?.dispose();heroSeq?.dispose();renderer?.dispose();
+ fabric?.dispose();loom?.dispose();heroSeq?.dispose();heroStudio?.dispose();sectionStudio?.dispose();renderer?.dispose();
 },{once:true});
 syncMotion();status();
 // Sicurezza: la hero deve restare leggibile anche se le animazioni di ingresso
