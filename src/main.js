@@ -5,6 +5,7 @@ import { createFabric } from './fabric.js';
 import { createLoom } from './loom.js';
 import { loadLoomFrame } from './asset-loader.js';
 import { HeroFilm } from './hero-film.js';
+import { createHeroSequence } from './hero-sequence.js';
 
 gsap.registerPlugin(ScrollTrigger);
 const $=s=>document.querySelector(s);
@@ -25,12 +26,19 @@ const cameraStops={
  cloth:{position:[3.1,5.8,7.9],look:[0,-.1,3.0]},
  fabric:{position:[0,7.5,12.8],look:[0,0,0]}
 };
-let renderer,scene,camera,fabric,loom;
+let renderer,scene,camera,fabric,loom,heroSeq;
 let raf=0,observer,motionContext=null,cameraTween=null;
 let activeMode='fabric',inWorkbench=false,targetProgress=.38,displayProgress=.38;
-let lastFrame=0,lastPicks=-1,lastStage="",lastStatusAt=0,isVisible=true,isAlive=true,heroFilm=null;
+let lastFrame=0,lastPicks=-1,lastStage="",lastStatusAt=0,isVisible=true,isAlive=true,heroFilm=null,lastPhase="";
 const lookAt={x:0,y:0,z:0};
-function render(){if(renderer&&scene&&camera)renderer.render(scene,camera);}
+const gaze={x:0,y:0,tx:0,ty:0};
+function render(){
+ if(!renderer||!scene||!camera)return;
+ const px=camera.position.x,py=camera.position.y;
+ camera.position.x+=gaze.x*.45;camera.position.y+=gaze.y*.3;
+ renderer.render(scene,camera);
+ camera.position.x=px;camera.position.y=py;
+}
 function updateCamera(){camera?.lookAt(lookAt.x,lookAt.y,lookAt.z);render();}
 function flyTo(name){
  if(!camera)return;
@@ -51,6 +59,7 @@ function status(){
 }
 function frame(now){
  raf=0;if(!isAlive||!renderer||document.hidden||!isVisible||prefersReduced())return;
+ gaze.x+=(gaze.tx-gaze.x)*.06;gaze.y+=(gaze.ty-gaze.y)*.06;
  const dt=Math.min(.05,Math.max(0,(now-lastFrame)/1000||0));lastFrame=now;
  if(Math.abs(displayProgress-targetProgress)>.0004){
   displayProgress=THREE.MathUtils.lerp(displayProgress,targetProgress,.14);
@@ -59,7 +68,8 @@ function frame(now){
  if(activeMode==='loom'){
   loom.update(dt);
   const machine=loom.state();if(machine.picks!==lastPicks||machine.stage!==lastStage&&now-lastStatusAt>175){lastPicks=machine.picks;lastStage=machine.stage;lastStatusAt=now;status();}
- }else if(!inWorkbench){fabric.group.rotation.y=-.28+Math.sin(now*.00027)*.055;}
+ }else if(!inWorkbench&&heroSeq){heroSeq.update(dt);}
+ if(heroSeq&&!inWorkbench&&activeMode==='fabric'&&heroSeq.phase!==lastPhase){lastPhase=heroSeq.phase;const el=$('#visual-phase');if(el)el.textContent=heroSeq.phase;}
  render();schedule();
 }
 function schedule(){if(!raf&&renderer&&isVisible&&!document.hidden&&!prefersReduced()&&isAlive){lastFrame=performance.now();raf=requestAnimationFrame(frame);}}
@@ -68,7 +78,7 @@ function resize(){
  if(!renderer||!camera)return;
  const width=host.clientWidth,height=host.clientHeight;
  if(width<2||height<2)return;
- renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,width<500?1.25:1.65));
+ renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.25));
  renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();render();
 }
 function fallbackFrame(){
@@ -91,8 +101,9 @@ function initialise3D(){
   scene.add(new THREE.HemisphereLight(0xedffe4,0x1d281e,3.1));
   const key=new THREE.DirectionalLight(0xf1ffbc,4.1);key.position.set(5,8,7);scene.add(key);
   const rim=new THREE.DirectionalLight(0x8fc8b0,2.1);rim.position.set(-6,3,-6);scene.add(rim);
-  fabric=createFabric();fabric.group.rotation.set(-.12,-.28,0);scene.add(fabric.group);
+  fabric=createFabric();fabric.group.rotation.set(-.12,-.28,0);scene.add(fabric.group);fabric.group.visible=false;
   loom=createLoom();loom.group.visible=false;scene.add(loom.group);
+  heroSeq=createHeroSequence();heroSeq.group.visible=true;scene.add(heroSeq.group);
   heroVisual.classList.add('webgl-ready');
   $('#asset-status').textContent='Modello 3D: caricamento…';
   loadLoomFrame({onReady:frameGroup=>{
@@ -121,7 +132,8 @@ function activateWorkbench(mode){
 }
 function setMode(mode){
  if(!fabric||!loom)return;
- activeMode=mode;fabric.group.visible=mode==='fabric';loom.group.visible=mode==='loom';
+ activeMode=mode;fabric.group.visible=mode==='fabric'&&inWorkbench;loom.group.visible=mode==='loom';
+ if(heroSeq)heroSeq.group.visible=mode==='fabric'&&!inWorkbench;
  $('#mode-fabric').setAttribute('aria-pressed',String(mode==='fabric'));
  $('#mode-loom').setAttribute('aria-pressed',String(mode==='loom'));
  flyTo(mode==='fabric'?'fabric':'overview');
@@ -148,14 +160,13 @@ function setupMotion(){
  motionContext?.revert();motionContext=null;
  if(prefersReduced())return;
  motionContext=gsap.context(()=>{
-  gsap.from('.hero-copy > *',{opacity:0,y:26,stagger:.10,duration:.8,ease:'power3.out'});
   gsap.utils.toArray('.section').forEach(section=>{
    gsap.from(section.querySelectorAll('h2,.eyebrow'),{opacity:0,y:24,stagger:.08,duration:.7,ease:'power2.out',scrollTrigger:{trigger:section,start:'top 86%',once:true}});
   });
   ScrollTrigger.create({trigger:'.hero',start:'top top',end:'bottom top',scrub:true,onUpdate:self=>{
    if(!inWorkbench&&activeMode==='fabric'&&!prefersReduced()&&camera){
     camera.position.z=12.8-self.progress*2.4;
-    fabric.group.rotation.y=-.28+self.progress*.56;
+    if(heroSeq)heroSeq.group.rotation.y=-.28+self.progress*.56;
     updateCamera();
    }
   }});
@@ -186,8 +197,20 @@ $('#loom-speed').addEventListener('input',event=>{
  loom?.setSpeed(Number(event.target.value));$('#loom-speed-value').textContent=Number(event.target.value).toFixed(2)+'×';
 });
 document.addEventListener('visibilitychange',()=>document.hidden?stop():schedule());
+window.addEventListener('pointermove',event=>{
+ gaze.tx=(event.clientX/window.innerWidth-.5)*2;
+ gaze.ty=-(event.clientY/window.innerHeight-.5)*2;
+},{passive:true});
+document.addEventListener('pointerleave',()=>{gaze.tx=0;gaze.ty=0;});
 window.addEventListener('pagehide',()=>{
  isAlive=false;stop();observer?.disconnect();host._viewObserver?.disconnect();cameraTween?.kill();motionContext?.revert();
- fabric?.dispose();loom?.dispose();renderer?.dispose();
+ fabric?.dispose();loom?.dispose();heroSeq?.dispose();renderer?.dispose();
 },{once:true});
 syncMotion();status();
+// Sicurezza: la hero deve restare leggibile anche se le animazioni di ingresso
+// non completano (compositor rallentato). Forza lo stato finale dopo 1.6s.
+setTimeout(()=>{
+ document.querySelectorAll('.hero, .hero [data-aos]').forEach(el=>{
+  el.classList.add('aos-animate');el.style.transition='none';el.style.opacity='1';el.style.transform='none';
+ });
+},1600);
