@@ -5,6 +5,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  repository_dispatch:
+    types: [redeploy]
 
 permissions:
   contents: read
@@ -30,8 +32,8 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
-      - name: Build
-        run: npm run build
+      - name: Test and build
+        run: npm run check
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
